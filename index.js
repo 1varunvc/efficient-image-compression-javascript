@@ -33,38 +33,59 @@ async function compressImage(inputPath, outputPath, quality) {
     return stats.size;
 }
 
-async function findOptimalCompression(inputPath, outputPath, maxSize, minSSIM, qualityBounds = [1, 100], tolerance = 0.05) {
-    let low = qualityBounds[0];
-    let high = qualityBounds[1];
-    let optimalQuality = low;
-    let bestFileSize = Infinity;
-    let bestSSIM = 0;
+async function findOptimalCompression(inputPath, outputPath, maxSize, minSSIM, qualityBounds = [50, 90], tolerance = 0.1) {
+    let optimalQuality = qualityBounds[1];
+    let step = 10;
+    let bestAttempt = null;
 
-    while (low <= high) {
-        const midQuality = Math.floor((low + high) / 2);
-        const trialOutputPath = `${outputPath}_temp_${midQuality}.jpeg`;
+    while (optimalQuality >= qualityBounds[0]) {
+        const trialOutputPath = `${outputPath}_temp_${optimalQuality}.jpeg`;
 
-        await compressImage(inputPath, trialOutputPath, midQuality);
+        await compressImage(inputPath, trialOutputPath, optimalQuality);
         const fileSize = await fs.stat(trialOutputPath).then(stats => stats.size);
         const currentSSIM = await calculate_ssim(inputPath, trialOutputPath);
 
         if (fileSize <= maxSize * (1 + tolerance) && currentSSIM >= minSSIM) {
-            if (fileSize < bestFileSize || (fileSize === bestFileSize && currentSSIM > bestSSIM)) {
-                optimalQuality = midQuality;
-                bestFileSize = fileSize;
-                bestSSIM = currentSSIM;
-            }
-            low = midQuality + 1;
+            bestAttempt = { fileSize, currentSSIM, optimalQuality };
+            await fs.rename(trialOutputPath, outputPath); // This version is kept
+            break; // Acceptable compression level found
         } else {
-            high = midQuality - 1;
+            await fs.unlink(trialOutputPath); // Remove unsuccessful attempt
         }
 
-        await fs.unlink(trialOutputPath); // Cleanup
+        optimalQuality -= step;
     }
 
-    // Final compression with optimal quality found
-    await compressImage(inputPath, outputPath, optimalQuality);
-    return { bestFileSize, bestSSIM, optimalQuality };
+    // Fallback Strategy: Iteratively adjust compression if no suitable level was found
+    if (!bestAttempt) {
+        console.log("Initial criteria not met. Applying fallback strategy.");
+        optimalQuality = qualityBounds[0] + (step / 2); // Start from a slightly higher quality than the lowest bound
+        let fallbackAttempt = false;
+
+        while (!fallbackAttempt && optimalQuality <= qualityBounds[1]) {
+            const fallbackOutputPath = `${outputPath}_fallback_${optimalQuality}.jpeg`;
+            await compressImage(inputPath, fallbackOutputPath, optimalQuality);
+            const fallbackFileSize = await fs.stat(fallbackOutputPath).then(stats => stats.size);
+            const fallbackSSIM = await calculate_ssim(inputPath, fallbackOutputPath);
+
+            if (fallbackFileSize <= maxSize || fallbackSSIM >= minSSIM) {
+                await fs.rename(fallbackOutputPath, outputPath); // This version is kept
+                fallbackAttempt = true;
+                console.log(`Fallback successful at quality level ${optimalQuality}`);
+                return { fallbackFileSize, fallbackSSIM, optimalQuality };
+            } else {
+                await fs.unlink(fallbackOutputPath); // Remove unsuccessful attempt
+                optimalQuality += step / 2; // Increment quality for next fallback attempt
+            }
+        }
+
+        if (!fallbackAttempt) {
+            console.log("Fallback strategy failed to meet criteria. No suitable compression found.");
+            return null;
+        }
+    }
+
+    return bestAttempt;
 }
 
 async function processFilesConcurrently(files, sourceDir, targetDir, maxSize, minSSIM) {
