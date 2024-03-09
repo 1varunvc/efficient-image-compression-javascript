@@ -1,7 +1,9 @@
 # Custom-added files
 .idea
 source
+source2
 target
+target2
 
 # Logs
 logs
