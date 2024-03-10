@@ -7,6 +7,18 @@ const cliProgress = require('cli-progress');
 const sourceDirPath = 'source';
 const targetDirPath = 'target';
 
+// Get the current date and time
+const startDate = new Date();
+const formattedStartDateTime = startDate.toLocaleString('en-US', {
+    month: 'long',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+});
+
 // Constants for target file size and conversion to bytes
 const TARGET_SIZE_MB = 2;
 const TARGET_SIZE_BYTES = TARGET_SIZE_MB * 1024 * 1024;
@@ -125,8 +137,8 @@ async function processDirectory(sourceDir, targetDir) {
 // Function to log a summary of the execution to the log file
 async function logSummary() {
     // Get the current date and time
-    const now = new Date();
-    const formattedDateTime = now.toLocaleString('en-US', {
+    const endDate = new Date();
+    const formattedEndDateTime = endDate.toLocaleString('en-US', {
         month: 'long',
         day: '2-digit',
         year: 'numeric',
@@ -137,7 +149,9 @@ async function logSummary() {
     });
 
     let summaryMessage = `
-Execution Summary - ${formattedDateTime}:
+Execution Summary:
+- Started: ${formattedStartDateTime}
+- Ended: ${formattedEndDateTime}
 - Total Files Processed: ${summaryStats.totalProcessed}
 - Files Compressed: ${summaryStats.compressed}
 - Files Copied Without Changes: ${summaryStats.copied}
