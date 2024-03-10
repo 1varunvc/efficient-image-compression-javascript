@@ -2,7 +2,6 @@
 .idea
 source
 target
-package-lock.json
 
 # Logs
 logs
