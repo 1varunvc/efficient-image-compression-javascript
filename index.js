@@ -3,6 +3,10 @@ const path = require('path');
 const sharp = require('sharp');
 const cliProgress = require('cli-progress');
 
+// Usage
+const sourceDirPath = 'source';
+const targetDirPath = 'target';
+
 // Constants for target file size and conversion to bytes
 const TARGET_SIZE_MB = 2;
 const TARGET_SIZE_BYTES = TARGET_SIZE_MB * 1024 * 1024;
@@ -10,7 +14,7 @@ const TARGET_SIZE_BYTES = TARGET_SIZE_MB * 1024 * 1024;
 // Create a new progress bar instance
 const progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
 
-const logFilePath = path.join('target', 'process.log'); // Define log file path
+const logFilePath = path.join(targetDirPath, 'process.log'); // Define log file path
 
 async function logToFile(message) {
     await fs.appendFile(logFilePath, message + '\n', 'utf8');
@@ -82,22 +86,20 @@ async function processDirectory(sourceDir, targetDir) {
         const targetEntryPath = path.join(targetDir, entry.name);
 
         if (entry.isDirectory()) {
+            // Recurse into subdirectories without incrementing the processedFilesCount
             await processDirectory(sourceEntryPath, targetEntryPath);
         } else if (/\.(jpg|jpeg|png)$/i.test(entry.name)) {
+            // Process and increment only for matching image files
             await processFile(sourceEntryPath, targetEntryPath, TARGET_SIZE_BYTES);
             processedFilesCount++;
             progressBar.update(processedFilesCount);
         } else {
-            // Non-image files count towards the progress but don't undergo processing
-            processedFilesCount++;
-            progressBar.update(processedFilesCount);
+            // For non-image files, copy them to maintain the directory structure
+            // without affecting the progress bar or processedFilesCount
+            await fs.copyFile(sourceEntryPath, targetEntryPath);
         }
     }
 }
-
-// Usage
-const sourceDirPath = 'source';
-const targetDirPath = 'target';
 
 (async () => {
     // Count total files first
@@ -110,6 +112,6 @@ const targetDirPath = 'target';
         })
         .catch(err => {
             progressBar.stop();
-            // console.error('Error processing files:', err);
+            logToFile('Error processing files:', err);
         });
 })();
