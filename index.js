@@ -3,7 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const cliProgress = require('cli-progress');
 
-// Usage
+// Usage paths
 const sourceDirPath = 'source';
 const targetDirPath = 'target';
 
@@ -11,6 +11,7 @@ const targetDirPath = 'target';
 const TARGET_SIZE_MB = 2;
 const TARGET_SIZE_BYTES = TARGET_SIZE_MB * 1024 * 1024;
 
+// Summary statistics for logging
 let summaryStats = {
     totalProcessed: 0,
     compressed: 0,
@@ -19,11 +20,13 @@ let summaryStats = {
     errorDetails: {}
 };
 
-// Create a new progress bar instance
+// Initialize a progress bar
 const progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
 
-const logFilePath = path.join(targetDirPath, 'process.log'); // Define log file path
+// Define log file path dynamically to ensure it's set after targetDirPath is confirmed
+let logFilePath; // Will be set in the main function
 
+// Function to log messages to a file in the target directory
 async function logToFile(message) {
     await fs.appendFile(logFilePath, message + '\n', 'utf8');
 }
@@ -31,6 +34,7 @@ async function logToFile(message) {
 let totalFilesToProcess = 0;
 let processedFilesCount = 0;
 
+// Function to count the total number of image files to process
 async function countFiles(sourceDir) {
     const entries = await fs.readdir(sourceDir, { withFileTypes: true });
     for (const entry of entries) {
@@ -42,14 +46,15 @@ async function countFiles(sourceDir) {
     }
 }
 
+// Function to process a single file, either compressing it or copying as is
 async function processFile(inputPath, outputPath, maxSize) {
     const { size } = await fs.stat(inputPath);
-    await logToFile(`Processing file: ${inputPath}`);
+    // await logToFile(`Processing file: ${inputPath}`);
     summaryStats.totalProcessed++;
 
     if (size < maxSize) {
         await fs.copyFile(inputPath, outputPath);
-        await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
+        // await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
         summaryStats.copied++;
         return;
     }
@@ -69,21 +74,20 @@ async function processFile(inputPath, outputPath, maxSize) {
 
             if (compressedSize <= maxSize) {
                 await fs.rename(tempOutputPath, outputPath);
-                await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
+                // await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
                 summaryStats.compressed++;
                 success = true;
             } else {
                 await fs.unlink(tempOutputPath);
-                await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
+                // await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
                 quality -= step;
             }
         }
     } catch (error) {
-        await logToFile(`Error processing ${inputPath}: ${error.message}`);
+        // await logToFile(`Error processing ${inputPath}: ${error.message}`);
         summaryStats.errors++;
 
-        // Dynamically categorize errors based on the error message or type
-        const errorType = error.code || "UnknownError"; // Adjust this based on how you want to categorize errors
+        const errorType = error.code || error.message || "UnknownError";
         if (!summaryStats.errorDetails[errorType]) {
             summaryStats.errorDetails[errorType] = [];
         }
@@ -92,11 +96,12 @@ async function processFile(inputPath, outputPath, maxSize) {
 
     if (quality === 0 && !success) {
         const errorMsg = "Failed to compress within target size, copying original.";
-        await logToFile(errorMsg);
+        // await logToFile(errorMsg);
         await fs.copyFile(inputPath, outputPath);
     }
 }
 
+// Recursive function to process directories and their contents
 async function processDirectory(sourceDir, targetDir) {
     const entries = await fs.readdir(sourceDir, { withFileTypes: true });
     await fs.mkdir(targetDir, { recursive: true });
@@ -106,46 +111,52 @@ async function processDirectory(sourceDir, targetDir) {
         const targetEntryPath = path.join(targetDir, entry.name);
 
         if (entry.isDirectory()) {
-            // Recurse into subdirectories without incrementing the processedFilesCount
             await processDirectory(sourceEntryPath, targetEntryPath);
         } else if (/\.(jpg|jpeg|png)$/i.test(entry.name)) {
-            // Process and increment only for matching image files
             await processFile(sourceEntryPath, targetEntryPath, TARGET_SIZE_BYTES);
             processedFilesCount++;
             progressBar.update(processedFilesCount);
         } else {
-            // For non-image files, copy them to maintain the directory structure
-            // without affecting the progress bar or processedFilesCount
             await fs.copyFile(sourceEntryPath, targetEntryPath);
         }
     }
 }
 
+// Function to log a summary of the execution to the log file
 async function logSummary() {
-    const summary = `
+    let summaryMessage = `
 Summary of Execution:
 - Total Files Processed: ${summaryStats.totalProcessed}
 - Files Compressed: ${summaryStats.compressed}
 - Files Copied Without Changes: ${summaryStats.copied}
 - Errors/Unable to Compress: ${summaryStats.errors}
-    `;
-    await logToFile(summary);
+`;
+
+    for (const [errorType, files] of Object.entries(summaryStats.errorDetails)) {
+        summaryMessage += `\nError Type: ${errorType} - Files Affected: ${files.length}\n`;
+        files.forEach(file => {
+            summaryMessage += `    - ${file}\n`;
+        });
+    }
+
+    await logToFile(summaryMessage);
 }
 
-// Adjust the main execution logic to call logSummary at the end
+// Main function to execute the script
 (async () => {
-    await countFiles(sourceDirPath);
-    progressBar.start(totalFilesToProcess, 0);
-    await processDirectory(sourceDirPath, targetDirPath)
-        .then(async () => {
-            progressBar.stop();
-            await logSummary(); // Log the summary at the end
-            await logToFile('Processing completed successfully.');
-        })
-        .catch(async (err) => {
-            progressBar.stop();
-            await logToFile('Error processing files: ' + err);
-            summaryStats.errors++; // Increment error count on catch
-            await logSummary(); // Ensure summary is logged even in case of errors
-        });
+    logFilePath = path.join(targetDirPath, 'process.log'); // Set the log file path
+    await countFiles(sourceDirPath); // Count the total number of files to process
+    progressBar.start(totalFilesToProcess, 0); // Start the progress bar
+
+    try {
+        await processDirectory(sourceDirPath, targetDirPath); // Start processing
+        progressBar.stop(); // Stop the progress bar once processing is complete
+        await logSummary(); // Log the summary of the execution
+        // await logToFile('Processing completed successfully.');
+    } catch (error) {
+        progressBar.stop(); // Ensure the progress bar is stopped in case of an error
+        // await logToFile(`Error processing: ${error.message}`);
+        summaryStats.errors++; // Increment the error count
+        await logSummary(); // Log the summary, including any errors encountered
+    }
 })();
