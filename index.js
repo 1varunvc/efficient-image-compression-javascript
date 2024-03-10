@@ -52,7 +52,7 @@ async function countFiles(sourceDir) {
     for (const entry of entries) {
         if (entry.isDirectory()) {
             await countFiles(path.join(sourceDir, entry.name));
-        } else if (/\.(jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
+        } else if (/\.(jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic|cr2|nef|arw|dng)$/i.test(entry.name)) {
             totalFilesToProcess++;
         }
     }
@@ -75,7 +75,7 @@ async function processFile(inputPath, outputPath, maxSize) {
   let step = 10;
   let success = false;
   // Include raw image formats in the check
-  const isRaw = /\.(cr2|nef|arw|dng|jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(inputPath);
+  const isRaw = /\.(cr2|nef|arw|dng|raf|jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(inputPath);
 
   try {
     while (quality > 0 && !success) {
@@ -127,7 +127,7 @@ async function processDirectory(sourceDir, targetDir) {
 
         if (entry.isDirectory()) {
             await processDirectory(sourceEntryPath, targetEntryPath);
-        } else if (/\.(cr2|nef|arw|dng|jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
+        } else if (/\.(cr2|nef|arw|dng|raf|jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
             await processFile(sourceEntryPath, targetEntryPath, TARGET_SIZE_BYTES);
             processedFilesCount++;
             progressBar.update(processedFilesCount);
