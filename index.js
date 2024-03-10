@@ -124,8 +124,20 @@ async function processDirectory(sourceDir, targetDir) {
 
 // Function to log a summary of the execution to the log file
 async function logSummary() {
+    // Get the current date and time
+    const now = new Date();
+    const formattedDateTime = now.toLocaleString('en-US', {
+        month: 'long',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+
     let summaryMessage = `
-Summary of Execution:
+Execution Summary - ${formattedDateTime}:
 - Total Files Processed: ${summaryStats.totalProcessed}
 - Files Compressed: ${summaryStats.compressed}
 - Files Copied Without Changes: ${summaryStats.copied}
