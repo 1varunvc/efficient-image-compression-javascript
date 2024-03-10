@@ -60,57 +60,60 @@ async function countFiles(sourceDir) {
 
 // Function to process a single file, either compressing it or copying as is
 async function processFile(inputPath, outputPath, maxSize) {
-    const { size } = await fs.stat(inputPath);
-    await logToFile(`Processing file: ${inputPath}`);
-    summaryStats.totalProcessed++;
+  const { size } = await fs.stat(inputPath);
+  await logToFile(`Processing file: ${inputPath}`);
+  summaryStats.totalProcessed++;
 
-    if (size < maxSize) {
-        await fs.copyFile(inputPath, outputPath);
-        await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
-        summaryStats.copied++;
-        return;
+  if (size < maxSize) {
+    await fs.copyFile(inputPath, outputPath);
+    await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
+    summaryStats.copied++;
+    return;
+  }
+
+  let quality = 90;
+  let step = 10;
+  let success = false;
+  // Include raw image formats in the check
+  const isRaw = /\.(cr2|nef|arw|dng|jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(inputPath);
+
+  try {
+    while (quality > 0 && !success) {
+      const tempOutputPath = `${outputPath}_temp`;
+      const outputFormat = isRaw ? 'jpeg' : 'jpeg'; // This example converts everything to JPEG; adjust as needed.
+      await sharp(inputPath)
+          [outputFormat]({ quality }) // Use the determined output format
+          .toFile(tempOutputPath);
+
+      const compressedSize = (await fs.stat(tempOutputPath)).size;
+
+      if (compressedSize <= maxSize) {
+        await fs.rename(tempOutputPath, outputPath);
+        await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
+        summaryStats.compressed++;
+        success = true;
+      } else {
+        await fs.unlink(tempOutputPath);
+        await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
+        quality -= step;
+      }
     }
+  } catch (error) {
+    await logToFile(`Error processing ${inputPath}: ${error.message}`);
+    summaryStats.errors++;
 
-    let quality = 90;
-    let step = 10;
-    let success = false;
-
-    try {
-        while (quality > 0 && !success) {
-            const tempOutputPath = `${outputPath}_temp`;
-            await sharp(inputPath)
-                .jpeg({ quality })
-                .toFile(tempOutputPath);
-
-            const compressedSize = (await fs.stat(tempOutputPath)).size;
-
-            if (compressedSize <= maxSize) {
-                await fs.rename(tempOutputPath, outputPath);
-                await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
-                summaryStats.compressed++;
-                success = true;
-            } else {
-                await fs.unlink(tempOutputPath);
-                await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
-                quality -= step;
-            }
-        }
-    } catch (error) {
-        await logToFile(`Error processing ${inputPath}: ${error.message}`);
-        summaryStats.errors++;
-
-        const errorType = error.code || error.message || "UnknownError";
-        if (!summaryStats.errorDetails[errorType]) {
-            summaryStats.errorDetails[errorType] = [];
-        }
-        summaryStats.errorDetails[errorType].push(inputPath);
+    const errorType = error.code || error.message || "UnknownError";
+    if (!summaryStats.errorDetails[errorType]) {
+      summaryStats.errorDetails[errorType] = [];
     }
+    summaryStats.errorDetails[errorType].push(inputPath);
+  }
 
-    if (quality === 0 && !success) {
-        const errorMsg = "Failed to compress within target size, copying original.";
-        await logToFile(errorMsg);
-        await fs.copyFile(inputPath, outputPath);
-    }
+  if (quality === 0 && !success) {
+    const errorMsg = "Failed to compress within target size, copying original.";
+    await logToFile(errorMsg);
+    await fs.copyFile(inputPath, outputPath);
+  }
 }
 
 // Recursive function to process directories and their contents
@@ -124,7 +127,7 @@ async function processDirectory(sourceDir, targetDir) {
 
         if (entry.isDirectory()) {
             await processDirectory(sourceEntryPath, targetEntryPath);
-        } else if (/\.(jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
+        } else if (/\.(cr2|nef|arw|dng|jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
             await processFile(sourceEntryPath, targetEntryPath, TARGET_SIZE_BYTES);
             processedFilesCount++;
             progressBar.update(processedFilesCount);
