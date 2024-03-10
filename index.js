@@ -15,7 +15,8 @@ let summaryStats = {
     totalProcessed: 0,
     compressed: 0,
     copied: 0,
-    errors: 0
+    errors: 0,
+    errorDetails: {}
 };
 
 // Create a new progress bar instance
@@ -50,36 +51,49 @@ async function processFile(inputPath, outputPath, maxSize) {
         await fs.copyFile(inputPath, outputPath);
         await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
         summaryStats.copied++;
-    } else {
-        let quality = 90;
-        let step = 10;
-        let compressedSize = size;
+        return;
+    }
 
-        while (quality > 0 && compressedSize > maxSize) {
+    let quality = 90;
+    let step = 10;
+    let success = false;
+
+    try {
+        while (quality > 0 && !success) {
             const tempOutputPath = `${outputPath}_temp`;
             await sharp(inputPath)
                 .jpeg({ quality })
                 .toFile(tempOutputPath);
 
-            compressedSize = (await fs.stat(tempOutputPath)).size;
+            const compressedSize = (await fs.stat(tempOutputPath)).size;
 
-            if (compressedSize > maxSize) {
-                await fs.unlink(tempOutputPath);
-                await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
-                quality -= step;
-            } else {
+            if (compressedSize <= maxSize) {
                 await fs.rename(tempOutputPath, outputPath);
                 await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
                 summaryStats.compressed++;
-                break;
+                success = true;
+            } else {
+                await fs.unlink(tempOutputPath);
+                await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
+                quality -= step;
             }
         }
+    } catch (error) {
+        await logToFile(`Error processing ${inputPath}: ${error.message}`);
+        summaryStats.errors++;
 
-        if (quality === 0) {
-            await logToFile("Unable to compress to target size. Copying original file.");
-            await fs.copyFile(inputPath, outputPath);
-            summaryStats.errors++;
+        // Dynamically categorize errors based on the error message or type
+        const errorType = error.code || "UnknownError"; // Adjust this based on how you want to categorize errors
+        if (!summaryStats.errorDetails[errorType]) {
+            summaryStats.errorDetails[errorType] = [];
         }
+        summaryStats.errorDetails[errorType].push(inputPath);
+    }
+
+    if (quality === 0 && !success) {
+        const errorMsg = "Failed to compress within target size, copying original.";
+        await logToFile(errorMsg);
+        await fs.copyFile(inputPath, outputPath);
     }
 }
 
