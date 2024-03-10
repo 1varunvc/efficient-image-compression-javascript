@@ -52,7 +52,7 @@ async function countFiles(sourceDir) {
     for (const entry of entries) {
         if (entry.isDirectory()) {
             await countFiles(path.join(sourceDir, entry.name));
-        } else if (/\.(jpg|jpeg|png)$/i.test(entry.name)) {
+        } else if (/\.(jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
             totalFilesToProcess++;
         }
     }
@@ -61,12 +61,12 @@ async function countFiles(sourceDir) {
 // Function to process a single file, either compressing it or copying as is
 async function processFile(inputPath, outputPath, maxSize) {
     const { size } = await fs.stat(inputPath);
-    // await logToFile(`Processing file: ${inputPath}`);
+    await logToFile(`Processing file: ${inputPath}`);
     summaryStats.totalProcessed++;
 
     if (size < maxSize) {
         await fs.copyFile(inputPath, outputPath);
-        // await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
+        await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
         summaryStats.copied++;
         return;
     }
@@ -86,17 +86,17 @@ async function processFile(inputPath, outputPath, maxSize) {
 
             if (compressedSize <= maxSize) {
                 await fs.rename(tempOutputPath, outputPath);
-                // await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
+                await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
                 summaryStats.compressed++;
                 success = true;
             } else {
                 await fs.unlink(tempOutputPath);
-                // await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
+                await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
                 quality -= step;
             }
         }
     } catch (error) {
-        // await logToFile(`Error processing ${inputPath}: ${error.message}`);
+        await logToFile(`Error processing ${inputPath}: ${error.message}`);
         summaryStats.errors++;
 
         const errorType = error.code || error.message || "UnknownError";
@@ -108,7 +108,7 @@ async function processFile(inputPath, outputPath, maxSize) {
 
     if (quality === 0 && !success) {
         const errorMsg = "Failed to compress within target size, copying original.";
-        // await logToFile(errorMsg);
+        await logToFile(errorMsg);
         await fs.copyFile(inputPath, outputPath);
     }
 }
@@ -178,10 +178,10 @@ Execution Summary:
         await processDirectory(sourceDirPath, targetDirPath); // Start processing
         progressBar.stop(); // Stop the progress bar once processing is complete
         await logSummary(); // Log the summary of the execution
-        // await logToFile('Processing completed successfully.');
+        await logToFile('Processing completed successfully.');
     } catch (error) {
         progressBar.stop(); // Ensure the progress bar is stopped in case of an error
-        // await logToFile(`Error processing: ${error.message}`);
+        await logToFile(`Error processing: ${error.message}`);
         summaryStats.errors++; // Increment the error count
         await logSummary(); // Log the summary, including any errors encountered
     }
