@@ -11,6 +11,13 @@ const targetDirPath = 'target';
 const TARGET_SIZE_MB = 2;
 const TARGET_SIZE_BYTES = TARGET_SIZE_MB * 1024 * 1024;
 
+let summaryStats = {
+    totalProcessed: 0,
+    compressed: 0,
+    copied: 0,
+    errors: 0
+};
+
 // Create a new progress bar instance
 const progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
 
@@ -36,44 +43,43 @@ async function countFiles(sourceDir) {
 
 async function processFile(inputPath, outputPath, maxSize) {
     const { size } = await fs.stat(inputPath);
-    logToFile(`Processing file: ${inputPath}`);
+    await logToFile(`Processing file: ${inputPath}`);
+    summaryStats.totalProcessed++;
 
     if (size < maxSize) {
-        // If the file is smaller than the target size, copy it directly
         await fs.copyFile(inputPath, outputPath);
-        logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
-        return;
-    }
+        await logToFile(`File is under ${TARGET_SIZE_MB}MB, copied without changes.`);
+        summaryStats.copied++;
+    } else {
+        let quality = 90;
+        let step = 10;
+        let compressedSize = size;
 
-    // Start compression process for files larger than 2 MB
-    let quality = 90; // Initial high quality
-    let step = 10;
-    let compressedSize = size;
+        while (quality > 0 && compressedSize > maxSize) {
+            const tempOutputPath = `${outputPath}_temp`;
+            await sharp(inputPath)
+                .jpeg({ quality })
+                .toFile(tempOutputPath);
 
-    while (quality > 0 && compressedSize > maxSize) {
-        const tempOutputPath = `${outputPath}_temp`;
-        await sharp(inputPath)
-            .jpeg({ quality })
-            .toFile(tempOutputPath);
+            compressedSize = (await fs.stat(tempOutputPath)).size;
 
-        compressedSize = (await fs.stat(tempOutputPath)).size;
-
-        if (compressedSize > maxSize) {
-            // Cleanup and reduce quality for the next iteration
-            await fs.unlink(tempOutputPath);
-            logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
-            quality -= step;
-        } else {
-            // If the file size is within the target range, rename and keep this version
-            await fs.rename(tempOutputPath, outputPath);
-            logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
+            if (compressedSize > maxSize) {
+                await fs.unlink(tempOutputPath);
+                await logToFile(`Compressed at quality ${quality} - Still above target, reducing quality.`);
+                quality -= step;
+            } else {
+                await fs.rename(tempOutputPath, outputPath);
+                await logToFile(`Compressed to ${compressedSize} bytes at quality ${quality} - Now within target.`);
+                summaryStats.compressed++;
+                break;
+            }
         }
-    }
 
-    if (quality === 0) {
-        // If unable to compress within the target size, copy the original file as a fallback
-        logToFile("Unable to compress to target size. Copying original file.");
-        await fs.copyFile(inputPath, outputPath);
+        if (quality === 0) {
+            await logToFile("Unable to compress to target size. Copying original file.");
+            await fs.copyFile(inputPath, outputPath);
+            summaryStats.errors++;
+        }
     }
 }
 
@@ -101,17 +107,31 @@ async function processDirectory(sourceDir, targetDir) {
     }
 }
 
+async function logSummary() {
+    const summary = `
+Summary of Execution:
+- Total Files Processed: ${summaryStats.totalProcessed}
+- Files Compressed: ${summaryStats.compressed}
+- Files Copied Without Changes: ${summaryStats.copied}
+- Errors/Unable to Compress: ${summaryStats.errors}
+    `;
+    await logToFile(summary);
+}
+
+// Adjust the main execution logic to call logSummary at the end
 (async () => {
-    // Count total files first
     await countFiles(sourceDirPath);
     progressBar.start(totalFilesToProcess, 0);
     await processDirectory(sourceDirPath, targetDirPath)
-        .then(() => {
+        .then(async () => {
             progressBar.stop();
-            logToFile('Processing completed successfully.');
+            await logSummary(); // Log the summary at the end
+            await logToFile('Processing completed successfully.');
         })
-        .catch(err => {
+        .catch(async (err) => {
             progressBar.stop();
-            logToFile('Error processing files:', err);
+            await logToFile('Error processing files: ' + err);
+            summaryStats.errors++; // Increment error count on catch
+            await logSummary(); // Ensure summary is logged even in case of errors
         });
 })();
