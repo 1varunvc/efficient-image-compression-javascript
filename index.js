@@ -124,7 +124,7 @@ async function processDirectory(sourceDir, targetDir) {
 
         if (entry.isDirectory()) {
             await processDirectory(sourceEntryPath, targetEntryPath);
-        } else if (/\.(jpg|jpeg|png)$/i.test(entry.name)) {
+        } else if (/\.(jpg|jpeg|png|webp|tiff|gif|svg|avif|heif|heic)$/i.test(entry.name)) {
             await processFile(sourceEntryPath, targetEntryPath, TARGET_SIZE_BYTES);
             processedFilesCount++;
             progressBar.update(processedFilesCount);
